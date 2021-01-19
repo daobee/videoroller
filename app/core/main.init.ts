@@ -8,6 +8,7 @@ export async function initMain() {
     global.__$api = api
     global.__$store = store
 
+    /* $tools.log.info('Main process inited.This is INFO') */
     resolve()
   })
 }

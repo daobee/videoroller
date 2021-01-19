@@ -10,6 +10,10 @@ const routes: RouteConfig[] = [
     key: 'PageParams',
     path: '/page-params/:test',
   },
+  {
+    key: 'Cameras',
+    path: '/cameras/:test',
+  },
 ]
 
 export default routes

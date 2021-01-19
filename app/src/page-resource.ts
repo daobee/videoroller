@@ -6,6 +6,7 @@
 export const Home = undefined
 
 export const Demo = import('./views/demo/demo')
+export const Cameras = import('./views/demo/cameras')
 export const PageParams = import('./views/demo/page-params')
 export const LogViewer = import('./views/log-viewer/log-viewer')
 export const About = import('./views/about/about')

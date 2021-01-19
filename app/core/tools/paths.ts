@@ -20,6 +20,9 @@ export const LOGS_PATH: string =
 export const ASSETS_PATH: string =
   process.env.NODE_ENV === 'development' ? 'assets' : path.join(APP_PATH, 'assets')
 
+/** sqlite3数据库 */
+export const DB_PATH: string = process.env.NODE_ENV === 'development' ? 'db.db' : path.join(APP_PATH, 'db.db')
+
 /**
  * 转换资源路径
  * @param pathStr

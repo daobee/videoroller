@@ -12,6 +12,12 @@
     "icon": "terminal-box"
   },
   {
+    "key": "Cameras",
+    "href": "#/cameras/ok?obj={ss:['4',2,3]}",
+    "title": "Cameras",
+    "icon": "folders"
+  },
+  {
     "key": "PageParams",
     "href": "#/page-params/ok?obj={ss:['1',2,3]}",
     "title": "Page Params",
