@@ -25,8 +25,8 @@ declare global {
     longitude?: number
     latitude?: number
     status?: string
-    infoUpdatetime?: string
-    rtmpUpdatetime?: string
+    infoUpdatetime?: Date
+    rtmpUpdatetime?: Date
     isFaultCount?: boolean
     isShow?: boolean
     rtmpAddress?: string
