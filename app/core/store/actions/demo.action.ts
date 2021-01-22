@@ -32,7 +32,7 @@ declare global {
   interface StoreStates {
     count: number
     cameraCount: number
-    cameraList: Array<object>
+    cameraList: Array<Camera>
   }
 
   interface StoreActions {

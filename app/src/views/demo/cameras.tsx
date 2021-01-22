@@ -1,7 +1,18 @@
 import React from 'react'
-import { Button, Table, Popconfirm, Upload } from 'antd'
+import { Button, Table, Popconfirm, Upload, Input, Space } from 'antd'
+import { SearchOutlined } from '@ant-design/icons'
 
 import { withStore } from '@/src/components'
+
+/** interfaces */
+import { Collection } from 'dexie'
+import { RcCustomRequestOptions } from 'antd/lib/upload/interface'
+import {
+  TablePaginationConfig,
+  SorterResult,
+  TableCurrentDataSource,
+  FilterDropdownProps,
+} from 'antd/lib/table/interface'
 
 type EditableTableProps = Parameters<typeof Table>[0]
 
@@ -16,6 +27,11 @@ declare interface CamerasPageState {
   currentUploading: Camera[] | null
   currentPage: number
   pageSize: number
+  sortKey: string | null
+  sortOrder: string | null
+  sortKeyPre: string | null
+  sortOrderPre: string | null
+  filters: Record<string, React.Key[] | null> | null
   uploadFileList: any[]
   loading: boolean
   createWindowLoading: boolean
@@ -38,6 +54,11 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     currentUploading: null,
     currentPage: 1,
     pageSize: 5,
+    sortKey: null,
+    sortOrder: null,
+    sortKeyPre: null,
+    sortOrderPre: null,
+    filters: null,
     uploadFileList: [],
     loading: false,
     createWindowLoading: false,
@@ -50,20 +71,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
   }
 
   componentDidMount(): void {
-    console.log(this)
     this.props.dispatch(this.queryCameraListPage)
-  }
-
-  get pageParams(): string {
-    return JSON.stringify(this.props.match.params)
-  }
-
-  get pageQuery(): string {
-    return JSON.stringify(this.props.query)
-  }
-
-  get queryCameras(): string {
-    return JSON.stringify($db.cameras.where('uuid').above(0).toArray(), null, 2)
   }
 
   render(): JSX.Element {
@@ -75,11 +83,15 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         title: 'UUID',
         dataIndex: 'uuid',
         key: 'uuid',
+        sorter: true,
+        ...this.getColumnSearchProps('uuid'),
       },
       {
         title: 'NAME',
         dataIndex: 'name',
         key: 'name',
+        sorter: true,
+        ...this.getColumnSearchProps('name'),
       },
       {
         title: 'operation',
@@ -106,19 +118,9 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
       pageSize: pageSize,
       showSizeChanger: true,
       pageSizeOptions: ['5', '9', '20'],
-      onShowSizeChange: (...v: any[]) => {
-        this.setState({ pageSize: v[v.length - 1] })
-        this.props.dispatch(this.queryCameraListPage)
-      },
-      onChange: (...v: any[]) => {
-        this.setState({ currentPage: v[0] })
-        this.props.dispatch(this.queryCameraListPage)
-      },
     }
     return (
       <div className="cameras layout-padding">
-        <p>Params: {this.pageParams}</p>
-        <p>Query: {this.pageQuery}</p>
         <p>
           <a>currentPage: {currentPage}</a>
         </p>
@@ -165,15 +167,50 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         <Table<Camera>
           rowKey="uuid"
           bordered
+          size="small"
           dataSource={cameraList}
           loading={asyncDispatchLoading}
           columns={columns as ColumnTypes}
           pagination={pagination}
+          onChange={this.handleTableChange}
         />
       </div>
     )
   }
 
+  handleTableChange = (
+    pagination: TablePaginationConfig,
+    filters: Record<string, React.Key[] | null>,
+    sorter: SorterResult<Camera> | SorterResult<Camera>[],
+    extra: TableCurrentDataSource<Camera>
+  ): void => {
+    switch (extra.action) {
+      case 'paginate':
+        // 翻页或修改每页显示条数操作
+        this.setState({ currentPage: pagination.current ?? 1, pageSize: pagination.pageSize ?? 5 }, () => {
+          this.props.dispatch(this.queryCameraListPage)
+        })
+        break
+      case 'sort':
+        if (!Array.isArray(sorter))
+          this.setState(
+            {
+              sortKey: typeof sorter.field == 'string' ? sorter.field : null,
+              sortOrder: typeof sorter.order == 'string' ? sorter.order : null,
+            },
+            () => {
+              this.props.dispatch(this.queryCameraListPage)
+            }
+          )
+        break
+      case 'filter':
+        this.setState({ filters: filters }, () => this.props.dispatch(this.queryCameraListPage))
+        break
+      default:
+        console.log('Unhandlded table action:', extra.action)
+        break
+    }
+  }
   /**
    * 摄像机查询
    * 从indexdedDB查询摄像机列表分页及设备总数，放到react store以供显示
@@ -181,17 +218,49 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
   queryCameraListPage = async (dispatch: Dispatch): Promise<void> => {
     this.setState({ asyncDispatchLoading: true })
     try {
-      const count: number = await $db.cameras.count()
+      /** 应用筛选和排序条件 */
+      // 创建Collection
+      let cameraCollection: Collection<Camera, number> = $db.cameras.toCollection()
+      // 排序
+      const { sortKey, sortOrder, sortKeyPre, sortOrderPre } = this.state
+      if (!(sortKey == sortKeyPre && sortOrder == sortOrderPre)) {
+        if (sortKey && sortOrder == 'ascend') cameraCollection = await $db.cameras.orderBy(sortKey)
+        if (sortKey && sortOrder == 'descend') cameraCollection = await $db.cameras.orderBy(sortKey).reverse()
+        this.setState({ sortKeyPre: sortKey, sortOrderPre: sortOrder })
+      } else console.log('skiping sort')
+      // 关键词搜索
+      const { filters } = this.state
+      cameraCollection = cameraCollection.filter((camera) => {
+        let flag = true
+        if (filters) {
+          Object.keys(filters).forEach((key) => {
+            if (filters && filters[key]) {
+              if (String(camera[key]).indexOf(String(filters[key])) < 0) flag = false
+            }
+          })
+        }
+        return flag
+      })
+      /** 排序、过滤结束 */
+      // 更新查询结果总数
+      const count: number = await cameraCollection.count()
       dispatch({ type: 'ACTION_SET_CAMERACOUNT', data: count })
       // 如果设备被删除后，当前页码不再存在，则回到最后一页
-      if (Math.ceil(count / this.state.pageSize) < this.state.currentPage)
-        this.setState({ currentPage: Math.ceil(count / this.state.pageSize) || 1 })
-      // 应用筛选和排序条件
-      const cameras: Array<Camera> = await $db.cameras
-        .offset((this.state.currentPage - 1) * this.state.pageSize)
-        .limit(this.state.pageSize)
-        .toArray()
-      dispatch({ type: 'ACTION_SET_CAMERALISTPAGE', data: cameras })
+      const { pageSize, currentPage } = this.state
+      const maxPage = Math.ceil(count / pageSize)
+      if (maxPage < currentPage) {
+        this.setState({ currentPage: maxPage }, async () => {
+          // 切出分页
+          cameraCollection = cameraCollection.offset((maxPage - 1) * pageSize).limit(pageSize)
+          // 执行查询
+          dispatch({ type: 'ACTION_SET_CAMERALISTPAGE', data: await cameraCollection.toArray() })
+        })
+      } else {
+        // 切出分页
+        cameraCollection = cameraCollection.offset((currentPage - 1) * pageSize).limit(pageSize)
+        // 执行查询
+        dispatch({ type: 'ACTION_SET_CAMERALISTPAGE', data: await cameraCollection.toArray() })
+      }
     } catch (error) {
       console.error(error)
     }
@@ -253,7 +322,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
    * 替换Upload上传行为，读取本地json，放到内存
    * @param options
    */
-  customRequest = (options: any) => {
+  customRequest = (options: RcCustomRequestOptions): void => {
     this.setState({ asyncDispatchLoading: true })
     const { file } = options
     const reader = new FileReader()
@@ -307,4 +376,59 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     this.setState({ currentUploading: null, currentFocusing: null, asyncDispatchLoading: false })
     dispatch(this.queryCameraListPage)
   }
+
+  /**
+   * 关键字搜索弹窗
+   */
+  searchInput: Input | null = null
+  /**
+   * 生成筛选按钮及弹窗
+   * @param dataIndex
+   */
+  getColumnSearchProps = (dataIndex: string): Record<string, unknown> => ({
+    filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: FilterDropdownProps) => (
+      <div style={{ padding: 8 }}>
+        <Input
+          ref={(node) => (this.searchInput = node)}
+          placeholder={`Search ${dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+          onPressEnter={() => confirm()}
+          style={{ width: 188, marginBottom: 8, display: 'block' }}
+        />
+        <Space>
+          <Button
+            type="primary"
+            onClick={() => confirm()}
+            icon={<SearchOutlined />}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Search
+          </Button>
+          <Button
+            onClick={() => {
+              if (clearFilters) clearFilters()
+            }}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Reset
+          </Button>
+        </Space>
+      </div>
+    ),
+    filterIcon: (filtered: boolean) => <SearchOutlined style={{ color: filtered ? '#1890ff' : undefined }} />,
+    // onFilter: (value: string | number | boolean, record: Camera) =>
+    //   record[dataIndex]
+    //     ? record[dataIndex].toString().toLowerCase().includes(value.toLowerCase())
+    //     : '',
+    onFilterDropdownVisibleChange: (visible: boolean) => {
+      if (visible) {
+        setTimeout(() => {
+          if (this.searchInput) this.searchInput.select()
+        }, 100)
+      }
+    },
+  })
 } // class Cameras end
