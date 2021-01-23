@@ -30,13 +30,12 @@ declare interface CamerasPageState {
   currentFocusing: any
   currentUploading: Camera[] | null
   currentPage: number
+  queryReason: string
+  collectionPre: Collection<Camera, number>
   pageSize: number
   sortKey: string | null
   sortOrder: string | null
-  sortKeyPre: string | null
-  sortOrderPre: string | null
   filters: Record<string, React.Key[] | null> | null
-  filtersPre: Record<string, React.Key[] | null> | null
   uploadFileList: any[]
   asyncDispatchLoading: boolean
 }
@@ -60,13 +59,12 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     currentFocusing: null, // 当前操作的row
     currentUploading: null, // 当前上传的json
     currentPage: 1, // 当前页码
+    queryReason: '', // 执行查询的原因
+    collectionPre: $db.cameras.orderBy(':id'), // 当前collection
     pageSize: 10, // 当前每页显示条数
     sortKey: null, // 当前根据哪一列排序
     sortOrder: null, // 当前为升序或降序
-    sortKeyPre: null, // 之前根据哪一列排序
-    sortOrderPre: null, // 之前为升序或降序
     filters: null, // 当前筛选条件
-    filtersPre: null, // 之前筛选条件
     uploadFileList: [], // 上传文件列表，目前没用
     asyncDispatchLoading: false, // 同步操作加载状态
   }
@@ -98,16 +96,31 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
       {
         title: 'UUID',
         dataIndex: 'uuid',
-        key: 'uuid',
         sorter: true,
+        ellipsis: true,
         ...this.getColumnSearchProps('uuid'),
       },
       {
         title: 'NAME',
         dataIndex: 'name',
-        key: 'name',
         sorter: true,
+        ellipsis: true,
+        width: 250,
         ...this.getColumnSearchProps('name'),
+      },
+      {
+        title: 'ROAD',
+        dataIndex: 'roadCode',
+        sorter: true,
+        ellipsis: true,
+        ...this.getColumnSearchProps('roadCode'),
+      },
+      {
+        title: 'MILESTONE',
+        dataIndex: 'milestone',
+        sorter: true,
+        ellipsis: true,
+        ...this.getColumnSearchProps('milestone'),
       },
       {
         title: 'operation',
@@ -133,6 +146,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
       total: cameraCount,
       pageSize: pageSize,
       showSizeChanger: true,
+      showQuickJumper: true,
       pageSizeOptions: ['5', '10', '20'],
     }
     return (
@@ -146,6 +160,16 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         <p>
           <a>cameraCount: {cameraCount}</a>
         </p>
+        <Table<Camera>
+          rowKey="uuid"
+          bordered
+          size="small"
+          dataSource={cameraList}
+          loading={asyncDispatchLoading}
+          columns={columns as ColumnTypes}
+          pagination={pagination}
+          onChange={this.handleTableChange}
+        />
         <Button
           type="primary"
           onClick={() => {
@@ -180,16 +204,14 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
             ImportJSON
           </Button>
         </Upload>
-        <Table<Camera>
-          rowKey="uuid"
-          bordered
-          size="small"
-          dataSource={cameraList}
-          loading={asyncDispatchLoading}
-          columns={columns as ColumnTypes}
-          pagination={pagination}
-          onChange={this.handleTableChange}
-        />
+        <Button
+          type="primary"
+          onClick={() => {
+            this.props.dispatch(this.exportJSON)
+          }}
+        >
+          ExportJSON
+        </Button>
       </div>
     ) // return() ends
   } // render ends
@@ -210,15 +232,19 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     switch (extra.action) {
       /** 翻页或修改每页显示条数 */
       case 'paginate':
-        this.setState({ currentPage: pagination.current ?? 1, pageSize: pagination.pageSize ?? 5 }, () => {
-          this.props.dispatch(this.queryCameraListPage)
-        })
+        this.setState(
+          { queryReason: 'paginate', currentPage: pagination.current ?? 1, pageSize: pagination.pageSize ?? 5 },
+          () => {
+            this.props.dispatch(this.queryCameraListPage)
+          }
+        )
         break
       /** 排序 */
       case 'sort':
         if (!Array.isArray(sorter))
           this.setState(
             {
+              queryReason: 'sort',
               sortKey: typeof sorter.field == 'string' ? sorter.field : null,
               sortOrder: typeof sorter.order == 'string' ? sorter.order : null,
             },
@@ -229,7 +255,9 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         break
       /** 筛选 */
       case 'filter':
-        this.setState({ filters: filters }, () => this.props.dispatch(this.queryCameraListPage))
+        this.setState({ queryReason: 'filter', filters: filters }, () =>
+          this.props.dispatch(this.queryCameraListPage)
+        )
         break
       default:
         console.log('Unhandlded table action:', extra.action)
@@ -245,53 +273,53 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     /** 开始查询，列表进入loading状态 */
     this.setState({ asyncDispatchLoading: true })
     try {
-      /** 排序和筛选开始 */
-      // 创建Collection
-      let cameraCollection: Collection<Camera, number> = $db.cameras.toCollection()
-      // 排序,如果排序或关键字搜索发生改变，则需要重排，否则跳过排序
-      const { sortKey, sortOrder, sortKeyPre, sortOrderPre, filters, filtersPre } = this.state
-      if (!(sortKey == sortKeyPre && sortOrder == sortOrderPre) || filters !== filtersPre) {
-        if (sortKey && sortOrder == 'ascend') cameraCollection = await $db.cameras.orderBy(sortKey)
-        if (sortKey && sortOrder == 'descend') cameraCollection = await $db.cameras.orderBy(sortKey).reverse()
-        this.setState({ sortKeyPre: sortKey, sortOrderPre: sortOrder })
-      } else console.log('skiping sort')
-      // 关键词搜索
-      // TODO: 进行类型断言，提高filter效率，目前全部按string处理
-      cameraCollection = cameraCollection.filter((camera) => {
-        let flag = true
-        if (filters) {
-          Object.keys(filters).forEach((key) => {
-            if (filters && filters[key]) {
-              if (String(camera[key]).indexOf(String(filters[key])) < 0) flag = false
-            }
-          })
-        }
-        return flag
-      })
-      if (filtersPre !== filters) this.setState({ filtersPre: filters })
-      /** 排序、筛选结束 */
-      /** 收尾工作开始 */
-      // 更新查询结果总数
-      const count: number = await cameraCollection.count()
-      dispatch({ type: 'ACTION_SET_CAMERACOUNT', data: count })
-      // 如果总数变化，新的总页数小于当前页码，则回到最后一页
-      const { pageSize, currentPage } = this.state
-      const maxPage = Math.ceil(count / pageSize)
-      if (maxPage < currentPage) {
-        // TODO: 将setState回调写法改为同步写法，否则列表的loading状态会先于查询完成而改变
-        this.setState({ currentPage: maxPage }, async () => {
-          // 切出分页
-          cameraCollection = cameraCollection.offset((maxPage - 1) * pageSize).limit(pageSize)
-          // 执行查询
-          dispatch({ type: 'ACTION_SET_CAMERALISTPAGE', data: await cameraCollection.toArray() })
-        })
-      } else {
-        // 切出分页
-        cameraCollection = cameraCollection.offset((currentPage - 1) * pageSize).limit(pageSize)
-        // 执行查询
-        dispatch({ type: 'ACTION_SET_CAMERALISTPAGE', data: await cameraCollection.toArray() })
-        /** 收尾工作结束 */
+      const { queryReason, pageSize, currentPage, sortKey, sortOrder, filters } = this.state
+      let coll: Collection<Camera, number> = this.state.collectionPre.clone()
+      let count = this.props.cameraCount
+      switch (queryReason) {
+        /** 仅翻页，只需重新切Collection */
+        case 'paginate':
+          console.log('paginating.')
+          break
+        /** 非翻页，重新应用筛选和排序条件 */
+        default:
+          console.log('resorting.')
+          // sort
+          coll = $db.cameras.orderBy(sortKey ?? ':id')
+          if (sortOrder === 'descend') coll.reverse()
+          // filter
+          // TODO: 进行类型断言，提高filter效率，目前全部按string处理
+          if (filters && Object.keys(filters).length > 0) {
+            coll = coll.filter((camera) => {
+              let flag = true
+              Object.keys(filters).forEach((key) => {
+                if (filters && filters[key]) {
+                  if (String(camera[key]).indexOf(String(filters[key])) < 0) flag = false
+                }
+              })
+              return flag
+            })
+          }
+          // recount
+          count = await coll.count()
+          dispatch({ type: 'ACTION_SET_CAMERACOUNT', data: count })
+          this.setState({ collectionPre: coll.clone() })
+          break
       }
+      /** 收尾工作开始 */
+      // 进行分页，如果总页数变化，新的总页数小于当前页码，则回到最后一页
+      const maxPage = Math.ceil(count / pageSize)
+      let pagedCameraCollection: Collection<Camera, number> = coll.clone()
+      let offset = (currentPage - 1) * pageSize
+      if (maxPage < currentPage) {
+        await this.setState({ currentPage: maxPage })
+        offset = (maxPage - 1) * pageSize
+      }
+      // 切出分页
+      pagedCameraCollection = pagedCameraCollection.offset(offset).limit(pageSize)
+      // 执行查询
+      dispatch({ type: 'ACTION_SET_CAMERALISTPAGE', data: await pagedCameraCollection.toArray() })
+      /** 收尾工作结束 */
     } catch (error) {
       console.error(error)
     }
@@ -407,6 +435,23 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     }
     this.setState({ currentUploading: null, currentFocusing: null, asyncDispatchLoading: false })
     dispatch(this.queryCameraListPage)
+  }
+
+  /**
+   * 导出摄像机json
+   */
+  exportJSON = async (): Promise<void> => {
+    this.setState({ asyncDispatchLoading: true })
+    // console.log(await this.state.collectionPre.toArray())
+    const a = document.createElement('a')
+    a.download = 'cameras.json'
+    a.style.display = 'none'
+    const blob = new Blob([JSON.stringify(await this.state.collectionPre.toArray(), null, 2)])
+    a.href = URL.createObjectURL(blob)
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    this.setState({ asyncDispatchLoading: false })
   }
 
   /**
