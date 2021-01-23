@@ -13,6 +13,7 @@ import {
   SorterResult,
   TableCurrentDataSource,
   FilterDropdownProps,
+  ExpandableConfig,
 } from 'antd/lib/table/interface'
 
 /**
@@ -105,7 +106,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         dataIndex: 'name',
         sorter: true,
         ellipsis: true,
-        width: 250,
+        width: 300,
         ...this.getColumnSearchProps('name'),
       },
       {
@@ -149,6 +150,10 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
       showQuickJumper: true,
       pageSizeOptions: ['5', '10', '20'],
     }
+    const expandable = {
+      expandedRowRender: (r: Camera) => <p style={{ margin: 0 }}>{String(r.rtmpAddress)}</p>,
+      rowExpandable: (r: Camera) => !!r.rtmpAddress,
+    }
     return (
       <div className="cameras layout-padding">
         <p>
@@ -169,6 +174,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
           columns={columns as ColumnTypes}
           pagination={pagination}
           onChange={this.handleTableChange}
+          expandable={expandable as ExpandableConfig<Camera>}
         />
         <Button
           type="primary"
@@ -178,21 +184,21 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         >
           Reload
         </Button>
-        <Button
+        {/* <Button
           type="primary"
           onClick={() => {
             this.props.dispatch(this.addCameraToDB)
           }}
         >
           AddCamera
-        </Button>
+        </Button> */}
         <Button
           type="primary"
           onClick={() => {
             this.props.dispatch(this.dropAllCameraFromDB)
           }}
         >
-          DropCamera
+          DropAll
         </Button>
         <Upload fileList={uploadFileList} customRequest={this.customRequest}>
           <Button
@@ -201,7 +207,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
               console.log('uploading')
             }}
           >
-            ImportJSON
+            Import
           </Button>
         </Upload>
         <Button
@@ -210,7 +216,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
             this.props.dispatch(this.exportJSON)
           }}
         >
-          ExportJSON
+          Export
         </Button>
       </div>
     ) // return() ends
@@ -421,10 +427,10 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
               latitude: parseInt(String(v.latitude)),
               status: String(v.status),
               infoUpdatetime: new Date(),
-              rtmpUpdatetime: String(v.rtmpAddress).indexOf('rtmp://') > 0 ? new Date() : undefined,
+              rtmpUpdatetime: String(v.rtmpAddress).indexOf('rtmp://') > -1 ? new Date() : undefined,
               isFaultCount: !!parseInt(String(v.isFaultCount)),
               isShow: !!parseInt(String(v.isShow)),
-              rtmpAddress: String(v.rtmpAddress).indexOf('rtmp://') > 0 ? String(v.rtmpAddress) : undefined,
+              rtmpAddress: String(v.rtmpAddress).indexOf('rtmp://') > -1 ? String(v.rtmpAddress) : undefined,
             }
           } catch (_) {
             return {}
