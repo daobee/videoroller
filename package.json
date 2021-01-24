@@ -83,5 +83,8 @@
   "bugs": {
     "url": "https://github.com/lanten/electron-antd/issues"
   },
-  "homepage": "https://github.com/lanten/electron-antd#readme"
+  "homepage": "https://github.com/lanten/electron-antd#readme",
+  "dependencies": {
+    "node-media-server": "^2.2.4"
+  }
 }
