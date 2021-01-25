@@ -1,6 +1,7 @@
 import * as tools from './tools'
 import { store } from './store'
 import * as api from './api'
+import { nms } from './nms'
 
 export async function initMain() {
   return new Promise<void>(async (resolve) => {
@@ -8,6 +9,7 @@ export async function initMain() {
     global.__$api = api
     global.__$store = store
 
+    nms.run()
     /* $tools.log.info('Main process inited.This is INFO') */
     resolve()
   })
