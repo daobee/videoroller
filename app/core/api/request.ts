@@ -1,5 +1,4 @@
 import axios, { AxiosRequestConfig } from 'axios'
-import path from 'path'
 import { errorAction } from './handle-response'
 
 // axios 跨域请求携带 cookie
@@ -32,7 +31,7 @@ export async function request(apiPath: string, params?: RequestParams, optionsSo
   const options: RequestOptions = Object.assign({}, DEFAULT_CONFIG, optionsSource)
   const { method, protocol, host, baseUrl, headers, responseType, checkStatus, formData } = options
   const sendData: AxiosRequestConfig = {
-    url: `${protocol}${path.join(host || '', baseUrl || '', apiPath || '')}`,
+    url: apiPath,
     method,
     headers,
     responseType,
@@ -56,7 +55,7 @@ export async function request(apiPath: string, params?: RequestParams, optionsSo
     .then((res) => {
       const data: any = res.data
 
-      if (!checkStatus || data.code == 200) {
+      if (!checkStatus || data.code == 200 || data.result == 'success') {
         return data
       } else {
         return Promise.reject(data)

@@ -47,6 +47,10 @@ export class Reflv extends React.Component<Props, State> {
         flvPlayer.attachMediaElement($video)
         flvPlayer.load()
         flvPlayer.play()
+        flvPlayer.on('ERROR', () => {
+          flvPlayer.pause()
+          flvPlayer.unload()
+        })
         this.flvPlayer = flvPlayer
       }
     }

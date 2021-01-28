@@ -13,7 +13,6 @@ import {
   SorterResult,
   TableCurrentDataSource,
   FilterDropdownProps,
-  ExpandableConfig,
 } from 'antd/lib/table/interface'
 
 /**
@@ -39,6 +38,8 @@ declare interface CamerasPageState {
   filters: Record<string, React.Key[] | null> | null
   uploadFileList: any[]
   asyncDispatchLoading: boolean
+  flvPlayer: JSX.Element
+  uuidInput: string
 }
 
 /**
@@ -68,6 +69,8 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     filters: null, // 当前筛选条件
     uploadFileList: [], // 上传文件列表，目前没用
     asyncDispatchLoading: false, // 同步操作加载状态
+    flvPlayer: <div></div>, // flv播放地址
+    uuidInput: '', // 输入flv播放uuid
   }
 
   /**
@@ -90,7 +93,7 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
    * render开始
    */
   render(): JSX.Element {
-    const { currentPage, pageSize, asyncDispatchLoading, uploadFileList } = this.state
+    const { currentPage, pageSize, asyncDispatchLoading, uploadFileList, flvPlayer, uuidInput } = this.state
     const { cameraList, cameraCount } = this.props
     // Table Column列属性配置
     const columns = [
@@ -128,17 +131,22 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         dataIndex: 'operation',
         render: (_: any, camera: Camera) =>
           cameraList.length >= 1 ? (
-            <Popconfirm
-              title={`Sure to delete ${camera.uuid}?`}
-              onConfirm={() => {
-                this.setState({ currentFocusing: camera }, () => {
-                  this.props.dispatch(this.delCameraFromDB)
-                  this.props.dispatch(this.queryCameraListPage)
-                })
-              }}
-            >
-              <a>Delete</a>
-            </Popconfirm>
+            <div>
+              <Popconfirm
+                title={`Sure to delete ${camera.uuid}?`}
+                onConfirm={() => {
+                  this.setState({ currentFocusing: camera }, () => {
+                    this.props.dispatch(this.delCameraFromDB)
+                    this.props.dispatch(this.queryCameraListPage)
+                  })
+                }}
+              >
+                <a> </a>
+              </Popconfirm>
+              <a onClick={() => this.setState({ uuidInput: String(camera.uuid) }, () => this.placeFlvAddr())}>
+                Play
+              </a>
+            </div>
           ) : null,
       },
     ]
@@ -213,10 +221,14 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         >
           Export
         </Button>
-        {/* <Reflv
-          type="flv"
-          url="http://127.0.0.1:8000/live/F791A6C7-672F-457D-81CC-2CC9FAC1DF13.flv?ismix=1&vchn=1&achn=1&vfmt=32769&afmt=32769&valg=5&aalg=2&id=F791A6C7-672F-457D-81CC-2CC9FAC1DF13&chn=0"
-        /> */}
+        {flvPlayer}
+        <Input
+          placeholder={'Input Flv Addr'}
+          value={uuidInput}
+          onChange={(e) => this.setState({ uuidInput: e.target.value })}
+          onPressEnter={() => this.placeFlvAddr()}
+          style={{ width: 588, marginBottom: 8, display: 'block' }}
+        />
       </div>
     ) // return() ends
   } // render ends
@@ -333,6 +345,49 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
     /** 结束查询，列表结束loading状态 */
     this.setState({ asyncDispatchLoading: false })
   } // function queryCameraListPage ends
+
+  /**
+   * 通过uuid设置flv播放地址
+   */
+  placeFlvAddr = async (): Promise<void> => {
+    console.log('placeFlvAddr', this.state.uuidInput.indexOf('http://'))
+    const uuid = this.state.uuidInput
+    if (uuid.indexOf('http://') > -1) {
+      this.setState({ flvPlayer: <Reflv type="flv" url={uuid} /> })
+    } else if (uuid.indexOf('rtmp://') > -1) {
+      const rtmpURL = new URL(uuid)
+      const flvURL = `http:${rtmpURL.pathname.replace(
+        '12.1.150.230:8099',
+        '127.0.0.1:8000'
+      )}/${rtmpURL.searchParams.get('id')}.flv${rtmpURL.search}`
+      console.log('input rtmpaddr,', flvURL)
+      this.setState({ flvPlayer: <div></div> }, () => {
+        this.setState({ flvPlayer: <Reflv type="flv" url={flvURL} /> })
+      })
+    } else {
+      let rtmp = ''
+      try {
+        const response = await $api.request(
+          `http://12.1.150.99:8080/iepweb/iep/map/video/getStream?resId=${uuid}`
+        )
+        rtmp = response.rtmpIp + response.uuid
+      } catch (error) {
+        console.error(error)
+      }
+      if (rtmp.indexOf('rtmp://') > -1) {
+        const rtmpURL = new URL(rtmp)
+        const flvURL = `http:${rtmpURL.pathname.replace(
+          '12.1.150.230:8099',
+          '127.0.0.1:8000'
+        )}/${rtmpURL.searchParams.get('id')}.flv${rtmpURL.search}`
+        this.setState({ flvPlayer: <div></div> }, () => {
+          this.setState({ flvPlayer: <Reflv type="flv" url={flvURL} /> })
+        })
+      }
+    }
+  }
+  // rtmp://12.1.150.230:8099/live?ismix=1&vchn=1&achn=1&vfmt=32769&afmt=32769&valg=5&aalg=2&id=F791A6C7-672F-457D-81CC-2CC9FAC1DF13&chn=0
+  // http://127.0.0.1:8000/live/F791A6C7-672F-457D-81CC-2CC9FAC1DF13.flv?ismix=1&vchn=1&achn=1&vfmt=32769&afmt=32769&valg=5&aalg=2&id=F791A6C7-672F-457D-81CC-2CC9FAC1DF13&chn=0
 
   /**
    * 添加随机摄像机
