@@ -1,9 +1,9 @@
 import React from 'react'
 import { Button, Table, Popconfirm, Upload, Input, Space } from 'antd'
+import axios from 'axios'
+import { withStore, Reflv } from '@/src/components'
 // TODO: 替换为remixicon图标
 import { SearchOutlined } from '@ant-design/icons'
-
-import { withStore } from '@/src/components'
 
 /** interfaces */
 import { Collection } from 'dexie'
@@ -150,10 +150,6 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
       showQuickJumper: true,
       pageSizeOptions: ['5', '10', '20'],
     }
-    const expandable = {
-      expandedRowRender: (r: Camera) => <p style={{ margin: 0 }}>{String(r.rtmpAddress)}</p>,
-      rowExpandable: (r: Camera) => !!r.rtmpAddress,
-    }
     return (
       <div className="cameras layout-padding">
         <p>
@@ -174,7 +170,6 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
           columns={columns as ColumnTypes}
           pagination={pagination}
           onChange={this.handleTableChange}
-          expandable={expandable as ExpandableConfig<Camera>}
         />
         <Button
           type="primary"
@@ -184,14 +179,14 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         >
           Reload
         </Button>
-        {/* <Button
+        <Button
           type="primary"
           onClick={() => {
-            this.props.dispatch(this.addCameraToDB)
+            this.props.dispatch(this.fetchCameraFromIep)
           }}
         >
-          AddCamera
-        </Button> */}
+          Fetch
+        </Button>
         <Button
           type="primary"
           onClick={() => {
@@ -218,9 +213,15 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         >
           Export
         </Button>
+        {/* <Reflv
+          type="flv"
+          url="http://127.0.0.1:8000/live/F791A6C7-672F-457D-81CC-2CC9FAC1DF13.flv?ismix=1&vchn=1&achn=1&vfmt=32769&afmt=32769&valg=5&aalg=2&id=F791A6C7-672F-457D-81CC-2CC9FAC1DF13&chn=0"
+        /> */}
       </div>
     ) // return() ends
   } // render ends
+  // rtmp://12.1.150.230:8099/live?ismix=1&vchn=1&achn=1&vfmt=32769&afmt=32769&valg=5&aalg=2&id=F791A6C7-672F-457D-81CC-2CC9FAC1DF13&chn=0
+  // http://127.0.0.1:8000/live/F791A6C7-672F-457D-81CC-2CC9FAC1DF13.flv?ismix=1&vchn=1&achn=1&vfmt=32769&afmt=32769&valg=5&aalg=2&id=F791A6C7-672F-457D-81CC-2CC9FAC1DF13&chn=0
 
   /**
    * 处理Table状态变化事件：分页、筛选、排序，会引起重新进行摄像机列表查询
@@ -346,6 +347,49 @@ export default class Cameras extends React.Component<CamerasPageProps, CamerasPa
         name: Math.floor(Math.random() * 100).toString(),
       })
       console.log(`camera added: ${index}`)
+      dispatch(this.queryCameraListPage)
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  /**
+   * 从99取摄像机列表
+   * 从99取摄像机列表到indexdedDB
+   */
+  fetchCameraFromIep = async (dispatch: Dispatch): Promise<void> => {
+    this.setState({ asyncDispatchLoading: true })
+    try {
+      // 发出请求
+      const response = await axios.post('http://12.1.150.99:8080/iepweb/iep/map/camera/searchAll?searchId=')
+      if (response.status === 200 && !!response.data && Array.isArray(response.data.result)) {
+        const data: Camera[] = response.data.result
+        const lastKey: number = await $db.cameras.bulkPut(
+          data.map<Camera>((v) => {
+            try {
+              return {
+                uuid: parseInt(String(v.uuid)),
+                id: parseInt(String(v.id)),
+                name: String(v.name),
+                centerCode: parseInt(String(v.centerCode)),
+                roadCode: parseInt(String(v.roadCode)),
+                milestone: parseInt(String(v.milestone)),
+                longitude: parseInt(String(v.longitude)),
+                latitude: parseInt(String(v.latitude)),
+                status: String(v.status),
+                infoUpdatetime: new Date(),
+                rtmpUpdatetime: String(v.rtmpAddress).indexOf('rtmp://') > -1 ? new Date() : undefined,
+                isFaultCount: !!parseInt(String(v.isFaultCount)),
+                isShow: !!parseInt(String(v.isShow)),
+                rtmpAddress: String(v.rtmpAddress).indexOf('rtmp://') > -1 ? String(v.rtmpAddress) : undefined,
+              }
+            } catch (_) {
+              return {}
+            }
+          })
+        )
+        console.log('bulkput complete:', lastKey)
+      }
       dispatch(this.queryCameraListPage)
     } catch (error) {
       console.error(error)
